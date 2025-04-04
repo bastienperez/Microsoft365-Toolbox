@@ -3,6 +3,10 @@
 <#
 Version History:
 
+## [1.2] - 2025-04-04
+### Changed
+- Change Write-Warning message in the catch block to Import-Module
+
 ## [1.1] - 2025-02-26
 ### Changed
 - Transform the script into a function
@@ -26,11 +30,9 @@ function Get-MgApplicationsSAML {
     }
     catch {
         if ($mgGraphAppsMissing) {
-            Write-Warning "Failed to import Microsoft.Graph.Applications module: $($mgGraphAppsMissing.Exception.Message)"
+            Write-Warning "Please install the Microsoft.Graph.Beta.Applications module: $($mgGraphAppsMissing.Exception.Message)"
         }
-        if ($mgGraphIdentitySignInsMissing) {
-            Write-Warning "Failed to import Microsoft.Graph.Identity.SignIns module: $($mgGraphIdentitySignInsMissing.Exception.Message)"
-        }
+
         return
     }
 
