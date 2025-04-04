@@ -27,6 +27,10 @@ Written by Bastien Perez (Clidsys.com - ITPro-Tips.com)
 For more Office 365/Microsoft 365 tips and news, check out ITPro-Tips.com.
 
 Version History:
+## [1.7] - 2025-04-04
+### Changed
+- Add scopes for `RoleManagement.Read.All` and `AuditLog.Read.All` permissions
+
 ## [1.6] - 2025-02-26
 ### Changed
 - Add `permissionsNeeded` variable
@@ -117,11 +121,14 @@ function Get-MgRoleReport {
     
     $scopes = (Get-MgContext).Scopes
 
-    $permissionsNeeded = 'Directory.Read.All'
-    $permissionMissing = $permissionsNeeded -notin $scopes
-
-    if ($permissionMissing) {
-        Write-Verbose "You need to have the $permissionsNeeded permission in the current token, disconnect to force getting a new token with the right permissions"
+    # Audit.Log.Read.All for sign-in activity
+    # RoleManagement.Read.All for role assignment (PIM eligible and permanent)
+    # Directory.Read.All for user and group and service principal information
+    $permissionsNeeded = 'Directory.Read.All', 'RoleManagement.Read.All', 'AuditLog.Read.All'
+    foreach ($permission in $permissionsNeeded) {
+        if ($scopes -notcontains $permission) {
+            Write-Verbose "You need to have the $permission permission in the current token, disconnect to force getting a new token with the right permissions"
+        }
     }
 
     if (-not $isConnected) {
