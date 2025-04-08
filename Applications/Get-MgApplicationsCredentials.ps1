@@ -1,6 +1,10 @@
 <#
 Version History:
 
+## [1.2] - 2025-04-04
+### Changed
+- Format output for Owners property
+
 ## [1.1] - 2025-02-26
 ### Changed
 - Transform the script into a function
@@ -63,6 +67,8 @@ function Get-MgApplicationsCredentials {
     foreach ($mgApp in $mgApps) {
         $owner = Get-MgApplicationOwner -ApplicationId $mgApp.Id
 
+        # if severral owners, join them with '|'
+
         foreach ($keyCredential in $mgApp.KeyCredentials) {
             $object = [PSCustomObject][ordered]@{
                 DisplayName           = $mgApp.DisplayName
@@ -75,7 +81,7 @@ function Get-MgApplicationsCredentials {
                 CredentialValid       = $keyCredential.EndDateTime -gt (Get-Date)
                 Type                  = $keyCredential.Type
                 Usage                 = $keyCredential.Usage
-                Owners                = $owner.AdditionalProperties.userPrincipalName
+                Owners                = $owner.AdditionalProperties.userPrincipalName -join '|'
             }
 
             $credentialsArray.Add($object)
@@ -93,7 +99,7 @@ function Get-MgApplicationsCredentials {
                 CredentialValid       = $passwordCredential.EndDateTime -gt (Get-Date)
                 Type                  = 'NA'
                 Usage                 = 'NA'
-                Owners                = $owner.AdditionalProperties.userPrincipalName
+                Owners                = $owner.AdditionalProperties.userPrincipalName -join '|'
             }
 
             $credentialsArray.Add($object)
