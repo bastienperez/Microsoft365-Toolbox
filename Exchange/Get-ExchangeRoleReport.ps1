@@ -1,4 +1,5 @@
 <#
+# TODO: add MFA state
 .SYNOPSIS
 Get-ExchangeRoleReport - Reports on Exchange RBAC roles and permissions.
 
@@ -123,7 +124,8 @@ function Get-ExchangeRoleReport {
         }
     }
 
-    # il faut ajouter Get-ManagementRoleAssignment pour avoir les permissions car parfois cela n'est pas fait via un groupe
+    # TODO: Add Get-ManagementRoleAssignment to obtain permissions, as this is sometimes not done via a group
     #Get-ManagementRoleAssignment -RoleAssigneeType User
+    
     return $exchangeRolesMembership
 }
