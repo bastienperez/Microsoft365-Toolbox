@@ -154,7 +154,7 @@ function Get-MgRoleReport {
     foreach ($mgRole in $mgRoles) {
         # Add the role definition to the object
         Add-Member -InputObject $mgRole -MemberType NoteProperty -Name RoleDefinitionExtended -Value ($mgRolesDefinition | Where-Object { $_.id -eq $mgRole.id }).roleDefinition 
-        #Add-Member -InputObject $mgRole -MemberType NoteProperty -Name RoleDefinitionExtended -Value ($mgRolesDefinition | Where-Object { $_.id -eq $mgRole.id }).roleDefinition.description 
+        # Add-Member -InputObject $mgRole -MemberType NoteProperty -Name RoleDefinitionExtended -Value ($mgRolesDefinition | Where-Object { $_.id -eq $mgRole.id }).roleDefinition.description 
     } 
 
     if ($IncludePIMEligibleAssignments) {
@@ -179,9 +179,10 @@ function Get-MgRoleReport {
         }
 
         $object = [PSCustomObject][ordered]@{    
-            Principal            = $principal   
+            Principal            = $principal
             PrincipalDisplayName = $mgRole.principal.AdditionalProperties.displayName
             PrincipalType        = $mgRole.principal.AdditionalProperties.'@odata.type'.Split('.')[-1]
+            PrincipalObjectID    = $mgRole.principal.id
             AssignedRole         = $mgRole.RoleDefinitionExtended.displayName
             AssignedRoleScope    = $mgRole.directoryScopeId
             AssignmentType       = if ($mgRole.status -eq 'Provisioned') { 'Eligible' } else { 'Permanent' }
@@ -276,7 +277,7 @@ function Get-MgRoleReport {
         $accountEnabled = $null
         $onPremisesSyncEnabled = $null
         
-        if ($objectsCacheArray.Principal -Contains $member.Principal) {
+        if ($objectsCacheArray.Principal -contains $member.Principal) {
             $accountEnabled = ($objectsCacheArray | Where-Object { $_.Principal -eq $member.Principal }).AccountEnabled
             $lastSignInDateTime = ($objectsCacheArray | Where-Object { $_.Principal -eq $member.Principal }).LastSignInDateTime
             $lastNonInteractiveSignInDateTime = ($objectsCacheArray | Where-Object { $_.Principal -eq $member.Principal }).LastNonInteractiveSignInDateTime
@@ -351,7 +352,7 @@ function Get-MgRoleReport {
         $member | Add-Member -MemberType NoteProperty -Name 'AccountEnabled' -Value $accountEnabled
 
         # only add if not already in the cache
-        if (-not $objectsCacheArray.Principal -Contains $member.Principal) {
+        if (-not $objectsCacheArray.Principal -contains $member.Principal) {
             $objectsCacheArray.Add($member)
         }
     }
