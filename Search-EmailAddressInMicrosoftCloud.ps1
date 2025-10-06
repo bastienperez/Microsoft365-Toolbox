@@ -27,40 +27,40 @@ function Search-EmailAddressInMicrosoftCloud {
                     }
                 }
 				
-                if (-not($allO365EmailAddressesHashTable.ContainsKey($emailaddress))) {
-                    $allO365EmailAddressesHashTable.add($emailaddress, ($emailaddress + '|' + $user.objectID + '|' + $user.DisplayName + '|' + $user.RecipientTypeDetails))
+                if (-not($allM365EmailAddressesHashTable.ContainsKey($emailaddress))) {
+                    $allM365EmailAddressesHashTable.add($emailaddress, ($emailaddress + '|' + $user.objectID + '|' + $user.DisplayName + '|' + $user.RecipientTypeDetails))
                 }
                 else {
                     # Write the details (objectID, RecipientType) of this account to better identification (if an email exists in some different objects type)
                     # don't write the objectID again
-                    if ($allO365EmailAddressesHashTable[$emailaddress] -like "*$($user.objectID)*") {
+                    if ($allM365EmailAddressesHashTable[$emailaddress] -like "*$($user.objectID)*") {
                         # if objectID and recipientTypeDetails already exists, write nothing, otherwise write only the recipienttypedetails
-                        if (-not($allO365EmailAddressesHashTable[$emailaddress] -like "*$($user.RecipientTypeDetails)*")) {
-                            $allO365EmailAddressesHashTable[$emailaddress] = $allO365EmailAddressesHashTable[$emailaddress] + '|' + $user.RecipientTypeDetails
+                        if (-not($allM365EmailAddressesHashTable[$emailaddress] -like "*$($user.RecipientTypeDetails)*")) {
+                            $allM365EmailAddressesHashTable[$emailaddress] = $allM365EmailAddressesHashTable[$emailaddress] + '|' + $user.RecipientTypeDetails
                         }
                     }
                     else {
-                        $allO365EmailAddressesHashTable[$emailaddress] = $allO365EmailAddressesHashTable[$emailaddress] + '|' + $user.DisplayName + '|' + $user.objectID + '|' + $user.RecipientTypeDetails
+                        $allM365EmailAddressesHashTable[$emailaddress] = $allM365EmailAddressesHashTable[$emailaddress] + '|' + $user.DisplayName + '|' + $user.objectID + '|' + $user.RecipientTypeDetails
                     }
                 }
             }
         }
     }
 
-    try {
-        Import-Module exchangeonlinemanagement -ErrorAction stop
-    }
-    catch {
-        Write-Warning 'First, install the official Microsoft Exchange Online Management module : Install-Module exchangeonlinemanagement'
-        return
-    }
+    $modules = @(
+        'ExchangeOnlineManagement'
+        'Microsoft.Graph.Authentication'
+        'Microsoft.Graph.Users'
+    )
 
-    try {
-        Import-Module MSOnline -ErrorAction stop
-    }
-    catch {
-        Write-Warning 'First, install the official Microsoft Online module : Install-Module MSOnline'
-        return
+    foreach ($module in $modules) {
+        try {
+            Import-Module $modules -ErrorAction stop
+        }
+        catch {
+            Write-Warning "First, install the Microsoft $modules module first : Install-Module $modules"
+            return
+        }
     }
 
     try {
@@ -77,53 +77,54 @@ function Search-EmailAddressInMicrosoftCloud {
     }
     catch {
         Write-Host 'Connect MsolService Online' -ForegroundColor Green
-        Connect-MsolService
+        Connect-MgGraph -Scopes 'User.Read.All' -NoWelcome
     }
 
-    $allO365EmailAddressesHashTable = @{}
+    $allM365EmailAddressesHashTable = @{}
 
     ###### Exchange Online infrastructure
     Write-Host 'Get All Exchange Online recipients...' -ForegroundColor Green
     $allExchangeRecipients = Get-Recipient * -ResultSize unlimited | Select-Object DisplayName, RecipientTypeDetails, EmailAddresses, @{Name = 'objectID'; Expression = { $_.ExternalDirectoryObjectId } }
-    Write-Host 'Get All SoftDeletedMailbox...' -ForegroundColor Green
-    $SoftDeleted = Get-Mailbox -SoftDeletedMailbox -ResultSize unlimited | Select-Object DisplayName, RecipientTypeDetails, EmailAddresses, @{Name = 'objectID'; Expression = { $_.ExternalDirectoryObjectId } }
+    
+    Write-Host 'Get All softDeletedMailbox...' -ForegroundColor Green
+    $softDeleted = Get-Mailbox -SoftDeletedMailbox -ResultSize unlimited | Select-Object DisplayName, RecipientTypeDetails, EmailAddresses, @{Name = 'objectID'; Expression = { $_.ExternalDirectoryObjectId } }
 
     ##### Azure Active Directory infrastructure
-    Write-Host 'Get All Office 365 users...' -ForegroundColor Green
+    Write-Host 'Get All Microsoft 365 users...' -ForegroundColor Green
 
-    # Office 365 users - UPN name
+    # Microsoft 365 users - UPN name
     # Same thing but with UPN because sometimes the UPN is not the same as the SMTP proxyaddresses
-    $Office365Users = Get-MsolUser -All
+    $entraIDUsers = Get-MgUser -All -Property UserPrincipalName, ID, UserType, ProxyAddresses
+    
+    $m365UPNUsers = $entraIDUsers | Select-Object DisplayName, @{Name = 'objectID'; Expression = { $_.ID } }, @{Name = 'EmailAddresses'; Expression = { $_.UserPrincipalName } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member' -or $null -eq $_.UserType) { 'Microsoft365User' } else { 'GuestUser' } } }
+    $m365EmailAddresses = $entraIDUsers | Select-Object DisplayName, @{Name = 'objectID'; Expression = { $_.ID } }, @{Name = 'EmailAddresses'; Expression = { $_.ProxyAddresses } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'Microsoft365User' }else { 'GuestUser' } } }
+    $m365AlternateEmailAddresses = $entraIDUsers | Select-Object DisplayName, @{Name = 'objectID'; Expression = { $_.ID } }, @{Name = 'EmailAddresses'; Expression = { $_.OtherMails } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member' -or $null -eq $_.UserType) { 'O365UserAlternateEmailAddress' } else { 'GuestUserAlternateEmailAddress' } } }
 
-    $Office365UPNUsers = $Office365Users | Select-Object DisplayName, objectID, @{Name = 'EmailAddresses'; Expression = { $_.UserPrincipalName } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member' -or $null -eq $_.UserType) { 'Office365User' } else { 'GuestUser' } } }
-    $Office365EmailAddresses = $Office365Users | Select-Object DisplayName, objectID, @{Name = 'EmailAddresses'; Expression = { $_.ProxyAddresses } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'Office365User' }else { 'GuestUser' } } }
-    $Office365AlternateEmailAddresses = $Office365Users | Select-Object DisplayName, objectID, @{Name = 'EmailAddresses'; Expression = { $_.AlternateEmailAddresses } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member' -or $null -eq $_.UserType) { 'O365UserAlternateEmailAddress' } else { 'GuestUserAlternateEmailAddress' } } }
+    Write-Host 'Get All Microsoft 365 deleted users...' -ForegroundColor Green
 
-    Write-Host 'Get All Office 365 deleted users...' -ForegroundColor Green
+    $entraIDDeletedUsers = Get-MgDirectoryDeletedItemAsUser -All
 
-    $Office365DeletedUsers = Get-MsolUser -ReturnDeletedUsers -All
-
-    $Office365DeletedUsersUPN = $Office365DeletedUsers | Select-Object DisplayName, objectID, @{Name = 'EmailAddresses'; Expression = { $_.UserPrincipalName } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'DeletedOffice365User' }else { 'DeletedGuestUser' } } }
-    $Office365DeletedUsersEmailAddresses = $Office365DeletedUsers | Select-Object DisplayName, objectID, @{Name = 'EmailAddresses'; Expression = { $_.ProxyAddresses } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'DeletedOffice365User' }else { 'DeletedGuestUser' } } }
+    $entraIDDeletedUsersUPN = $entraIDDeletedUsers | Select-Object DisplayName, @{Name = 'objectID'; Expression = { $_.ID } }, @{Name = 'EmailAddresses'; Expression = { $_.UserPrincipalName } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'DeletedMicrosoft365User' }else { 'DeletedGuestUser' } } }
+    $entraIDDeletedUsersEmailAddresses = $entraIDDeletedUsers | Select-Object DisplayName, @{Name = 'objectID'; Expression = { $_.ID } }, @{Name = 'EmailAddresses'; Expression = { $_.ProxyAddresses } }, @{Name = 'RecipientTypeDetails'; Expression = { if ($_.UserType -eq 'Member') { 'DeletedMicrosoft365User' }else { 'DeletedGuestUser' } } }
 
     # Creating hashtable
     Write-Host 'Creating HashTable...' -ForegroundColor Green
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $allExchangeRecipients
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $SoftDeleted
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $allExchangeRecipients
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $softDeleted
 
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $Office365UPNUsers 
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $Office365EmailAddresses
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $Office365AlternateEmailAddresses
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $m365UPNUsers 
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $m365EmailAddresses
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $m365AlternateEmailAddresses
 
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $Office365DeletedUsersUPN 
-    AddtoHashTable -HashTable $allO365EmailAddressesHashTable -Users $Office365DeletedUsersEmailAddresses
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $entraIDDeletedUsersUPN 
+    AddtoHashTable -HashTable $allM365EmailAddressesHashTable -Users $entraIDDeletedUsersEmailAddresses
 
     if ($SearchEmails) {
         foreach ($SearchEmail in $SearchEmails) {
 
-            if ($allO365EmailAddressesHashTable.Contains($SearchEmail)) {
+            if ($allM365EmailAddressesHashTable.Contains($SearchEmail)) {
                 Write-Host $SearchEmail 'matching: ' -ForegroundColor Yellow -NoNewline
-                $allO365EmailAddressesHashTable[$SearchEmail]
+                $allM365EmailAddressesHashTable[$SearchEmail]
             }
             else {
                 Write-Host $SearchEmail 'not found' -ForegroundColor Red
@@ -132,6 +133,6 @@ function Search-EmailAddressInMicrosoftCloud {
     }
     
     else {
-        return $allO365EmailAddressesHashTable
+        return $allM365EmailAddressesHashTable
     }
 }
