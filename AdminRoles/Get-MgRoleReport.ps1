@@ -10,11 +10,31 @@ To get all the role, included empty roles, add -IncludeEmptyRoles $true
 The report is output to an array contained all the audit logs found.
 To export in a csv, do Get-MgRoleReport | Export-CSV -NoTypeInformation "$(Get-Date -Format yyyyMMdd)_adminRoles.csv" -Encoding UTF8
 
+.PARAMETER IncludeEmptyRoles
+Switch parameter to include empty roles in the report
+
+.PARAMETER IncludePIMEligibleAssignments
+Boolean parameter to include PIM eligible assignments in the report. Default is $true
+
+.PARAMETER ForceNewToken
+Switch parameter to force getting a new token from Microsoft Graph
+
+.PARAMETER MaesterMode
+Switch parameter to use with the Maester framework (internal process not presented here)
+
 .EXAMPLE
 Get-MgRoleReport
 
+Get all the roles with members, including PIM eligible assignments but without empty roles
+
 .EXAMPLE
-Get-MgRoleReport -IncludeEmptyRoles $true
+Get-MgRoleReport -IncludeEmptyRoles
+
+Get all the roles, including the ones without members
+
+.EXAMPLE
+Get-MgRoleReport -IncludePIMEligibleAssignments $false
+Get all the roles with members (without empty roles), but without PIM eligible assignments
 
 .EXAMPLE
 Get-MgRoleReport | Export-CSV -NoTypeInformation "$(Get-Date -Format yyyyMMdd)_adminRoles.csv" -Encoding UTF8
@@ -27,6 +47,13 @@ Written by Bastien Perez (Clidsys.com - ITPro-Tips.com)
 For more Office 365/Microsoft 365 tips and news, check out ITPro-Tips.com.
 
 Version History:
+## [1.8] - 2025-10-08
+### Added
+- Add `IncludeEmptyRoles` switch parameter to get all roles, even the ones without members
+
+### Changed
+- Use List for mgRoles for better performance
+
 ## [1.7] - 2025-04-04
 ### Changed
 - Add scopes for `RoleManagement.Read.All` and `AuditLog.Read.All` permissions
@@ -83,6 +110,8 @@ function Get-MgRoleReport {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $false)]
+        [switch]$IncludeEmptyRoles = $false,
+        [Parameter(Mandatory = $false)]
         [boolean]$IncludePIMEligibleAssignments = $true,
         [Parameter(Mandatory = $false)]
         [switch]$ForceNewToken,
@@ -90,6 +119,10 @@ function Get-MgRoleReport {
         [Parameter(Mandatory = $false)]
         [switch]$MaesterMode        
     )
+
+    [System.Collections.Generic.List[PSObject]]$rolesMembersArray = @()
+    [System.Collections.Generic.List[Object]]$objectsCacheArray = @()
+    [System.Collections.Generic.List[Object]]$mgRolesArray = @()
 
     $modules = @(
         'Microsoft.Graph.Authentication'
@@ -136,31 +169,38 @@ function Get-MgRoleReport {
         $null = Connect-MgGraph -Scopes $permissionsNeeded -NoWelcome
     }
 
+    Write-Verbose 'Collecting  roles with assignments...'
+
     try {
-        #$mgRoles = Get-MgRoleManagementDirectoryRoleDefinition -ErrorAction Stop
+        #$mgRolesArray = Get-MgRoleManagementDirectoryRoleDefinition -ErrorAction Stop
         
-        $mgRoles = Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal
-        #$mgRoles = (Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments' -OutputType PSObject).Value
+        Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty Principal | ForEach-Object {
+            $mgRolesArray.Add($_)
+        }
 
+        #$mgRolesArray = (Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments' -OutputType PSObject).Value
 
-        # The maximum property is 1 so we need to do a second request to get the role definition
         $mgRolesDefinition = Get-MgRoleManagementDirectoryRoleAssignment -All -ExpandProperty roleDefinition
-        #$mgRolesDefinition = (Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/roleManagement/directory/roleAssignments?`$expand=roleDefinition" -OutputType PSObject).Value
+
     }
     catch {
-        Write-Warning $($_.Exception.Message)   
-    }   
-    
-    foreach ($mgRole in $mgRoles) {
+        Write-Warning $($_.Exception.Message)
+    }
+
+    # In *Assignment, we don't have the role definition, so we need to get it and add it to the object
+    foreach ($mgRole in $mgRolesArray) {
         # Add the role definition to the object
         Add-Member -InputObject $mgRole -MemberType NoteProperty -Name RoleDefinitionExtended -Value ($mgRolesDefinition | Where-Object { $_.id -eq $mgRole.id }).roleDefinition 
         # Add-Member -InputObject $mgRole -MemberType NoteProperty -Name RoleDefinitionExtended -Value ($mgRolesDefinition | Where-Object { $_.id -eq $mgRole.id }).roleDefinition.description 
     } 
+    
 
     if ($IncludePIMEligibleAssignments) {
         Write-Verbose 'Collecting PIM eligible role assignments...'
         try {
-            $mgRoles += (Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All -ExpandProperty * -ErrorAction Stop | Select-Object id, principalId, directoryScopeId, roleDefinitionId, status, principal, @{Name = 'RoleDefinitionExtended'; Expression = { $_.roleDefinition } })
+            (Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All -ExpandProperty * -ErrorAction Stop | Select-Object id, principalId, directoryScopeId, roleDefinitionId, status, principal, @{Name = 'RoleDefinitionExtended'; Expression = { $_.roleDefinition } }) | ForEach-Object {
+                $mgRolesArray.Add($_)
+            }
             #$mgRoles += (Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleEligibilitySchedule' -OutputType PSObject).Value
         }
         catch {
@@ -168,9 +208,7 @@ function Get-MgRoleReport {
         }
     }
 
-    [System.Collections.Generic.List[PSObject]]$rolesMembers = @()
-
-    foreach ($mgRole in $mgRoles) {    
+    foreach ($mgRole in $mgRolesArray) {    
         $principal = switch ($mgRole.principal.AdditionalProperties.'@odata.type') {
             '#microsoft.graph.user' { $mgRole.principal.AdditionalProperties.userPrincipalName; break }
             '#microsoft.graph.servicePrincipal' { $mgRole.principal.AdditionalProperties.appId; break }
@@ -192,7 +230,7 @@ function Get-MgRoleReport {
             Recommendations      = 'Check if the user has alternate email or alternate phone number on Microsoft Entra ID'
         }
 
-        $rolesMembers.Add($object)
+        $rolesMembersArray.Add($object)
 
         if ($object.PrincipalType -eq 'group') {
             # need to get ID for Get-MgGroupMember
@@ -234,7 +272,7 @@ function Get-MgRoleReport {
                     Recommendations      = 'Check if the user has alternate email or alternate phone number on Microsoft Entra ID'
                 }
 
-                $rolesMembers.Add($object)
+                $rolesMembersArray.Add($object)
             }
         }
     }
@@ -252,15 +290,15 @@ function Get-MgRoleReport {
         Recommendations      = 'Please check this URL to identify if you have partner with admin roles https: / / admin.microsoft.com / AdminPortal / Home#/partners. More information on https://practical365.com/identifying-potential-unwanted-access-by-your-msp-csp-reseller/'
     }    
     
-    $rolesMembers.Add($object)
+    $rolesMembersArray.Add($object)
 
     #foreach user, we check if the user is global administrator. If global administrator, we add a new parameter to the object recommandationRole to tell the other role is not useful
     $globalAdminsHash = @{}
-    $rolesMembers | Where-Object { $_.AssignedRole -eq 'Global Administrator' } | ForEach-Object {
+    $rolesMembersArray | Where-Object { $_.AssignedRole -eq 'Global Administrator' } | ForEach-Object {
         $globalAdminsHash[$_.Principal] = $true
     }
 
-    $rolesMembers | ForEach-Object {
+    $rolesMembersArray | ForEach-Object {
         if ($globalAdminsHash.ContainsKey($_.Principal) -and $_.AssignedRole -ne 'Global Administrator') {
             $_ | Add-Member -MemberType NoteProperty -Name 'RecommandationRole' -Value 'This user is Global Administrator. The other role(s) is/are not useful'
         }
@@ -269,9 +307,8 @@ function Get-MgRoleReport {
         }
     }
 
-    [System.Collections.Generic.List[Object]]$objectsCacheArray = @()
 
-    foreach ($member in $rolesMembers) {
+    foreach ($member in $rolesMembersArray) {
 
         $lastSignInDateTime = $null
         $accountEnabled = $null
@@ -357,5 +394,42 @@ function Get-MgRoleReport {
         }
     }
     
-    return $rolesMembers
+    if ($IncludeEmptyRoles.IsPresent) {
+
+        Write-Verbose 'Collecting all roles...'
+        try {
+            #$mgRolesArray = (Invoke-MgGraphRequest -Method GET -Uri 'https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions' -OutputType PSObject).Value
+            $mgRolesDefinition = Get-MgRoleManagementDirectoryRoleDefinition -All -ErrorAction Stop
+
+            $emptyRoles = $mgRolesDefinition | Where-Object { $mgRolesArray.RoleDefinitionId -notcontains $_.id }
+
+            foreach ($emptyRole in $emptyRoles) {
+                $object = [PSCustomObject][ordered]@{    
+                    Principal                        = 'Role has no members'
+                    PrincipalDisplayName             = $null
+                    PrincipalType                    = $null
+                    PrincipalObjectID                = $null
+                    AssignedRole                     = $emptyRole.displayName
+                    AssignedRoleScope                = $null
+                    AssignmentType                   = $null
+                    RoleIsBuiltIn                    = $emptyRole.isBuiltIn
+                    RoleTemplate                     = $emptyRole.templateId
+                    DirectMember                     = $null
+                    Recommendations                  = $null
+                    LastSignInDateTime               = $null
+                    LastNonInteractiveSignInDateTime = $null
+                    AccountEnabled                   = $null
+                    OnPremisesSyncEnabled            = $null
+                    RecommandationRole               = $null
+                }
+
+                $rolesMembersArray.Add($object)
+            }
+        }
+        catch {
+            Write-Warning $($_.Exception.Message)   
+        }   
+
+    }
+    return $rolesMembersArray
 }
