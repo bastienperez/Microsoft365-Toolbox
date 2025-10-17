@@ -320,7 +320,6 @@ function Get-MgRoleReport {
     }
 
     foreach ($member in $rolesMembersArray) {
-        Write-Host -ForegroundColor Cyan "Processing $($member.Principal) of type - $($member.AssignedRole)"
         Write-Verbose "Processing $($member.AssignedRole) - $($member.AssignedRole)"
 
         $lastSignInDateTime = $null
