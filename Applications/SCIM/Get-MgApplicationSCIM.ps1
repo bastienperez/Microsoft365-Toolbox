@@ -87,7 +87,7 @@ function Get-MgApplicationSCIM {
     $i = 0
     foreach ($servicePrincipal in $servicePrincipals) {
         $i++
-        Write-Host "($i/$($servicePrincipals.Count)) - $($servicePrincipal.DisplayName)  and check for synchronization jobs" -ForegroundColor Cyan
+        Write-Host "($i/$($servicePrincipals.Count)) - $($servicePrincipal.DisplayName): check for synchronization jobs" -ForegroundColor Cyan
         # Service principal is the ObjectID in Microsoft Entra ID
         $job = Get-MgServicePrincipalSynchronizationJob -ServicePrincipalId $servicePrincipal.Id -All
         
