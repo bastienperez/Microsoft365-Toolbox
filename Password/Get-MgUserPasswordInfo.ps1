@@ -79,7 +79,6 @@ function Get-MgUserPasswordInfo {
                 '2147483647 (Password never expire)' 
             }
             else { 
-			  
                 $domain.PasswordValidityPeriodInDays 
             }
             
@@ -120,20 +119,20 @@ function Get-MgUserPasswordInfo {
         return $domainPasswordPolicies
     }
 
+    $userParams = 'UserPrincipalName, LastPasswordChangeDateTime, OnPremisesLastSyncDateTime, OnPremisesSyncEnabled, PasswordProfile, PasswordPolicies, AccountEnabled, DisplayName'
     # Retrieve user password information
     if ($UserPrincipalName) {
         Write-Host -ForegroundColor Cyan "Retrieving password information for $($UserPrincipalName.Count) user(s)"
         [System.Collections.Generic.List[PSObject]]$usersList = @()
         foreach ($upn in $UserPrincipalName) {												 
-            $user = Get-MgUser -UserId $upn -Property UserPrincipalName, LastPasswordChangeDateTime, OnPremisesLastSyncDateTime, OnPremisesSyncEnabled, PasswordProfile, PasswordPolicies
+            $user = Get-MgUser -UserId $upn -Property $userParams
 
             $usersList.Add($user)
         }
     }
     else {
-		  
         Write-Host -ForegroundColor Cyan 'Retrieving password information for all users'
-        $usersList = Get-MgUser -All -Property UserPrincipalName, LastPasswordChangeDateTime, OnPremisesLastSyncDateTime, OnPremisesSyncEnabled, PasswordProfile, PasswordPolicies
+        $usersList = Get-MgUser -All -Property $userParams
     }
 
     [System.Collections.Generic.List[PSObject]]$passwordsInfoArray = @()
@@ -156,19 +155,35 @@ function Get-MgUserPasswordInfo {
             }
         }
 
+        if ($userDomainPolicy.PasswordValidityPeriod -ne '2147483647 (Password never expire)') {
+            $daysLeft = ($user.LastPasswordChangeDateTime.AddDays($userDomainPolicy.PasswordValidityPeriod) - (Get-Date)).Days
+            if ($daysLeft -lt 0) {
+                $daysLeft = 'Already expired'
+            }
+            else {
+                $daysLeft = $daysLeft
+            }
+        }
+        else {
+            $daysLeft = 'Password never expires'
+        }
+
         $object = [PSCustomObject][ordered]@{
             UserPrincipalName                    = $user.UserPrincipalName
-            LastPasswordChangeDateTimeUTC        = $user.LastPasswordChangeDateTime
+            DisplayName                          = $user.DisplayName
+            Enabled                              = $user.AccountEnabled
+            PasswordPolicies                     = $user.PasswordPolicies
+            PasswordLastSetUTCTime               = $user.LastPasswordChangeDateTime
+            PasswordPolicyMaxPasswordAgeInDays   = $userDomainPolicy.PasswordValidityPeriod
+            PasswordExpirationDateUTC            = if ($userDomainPolicy.PasswordValidityPeriod -ne '2147483647 (Password never expire)') { $user.LastPasswordChangeDateTime.AddDays($userDomainPolicy.PasswordValidityPeriod) }else {}
+            DaysLeftBeforePasswordChangeUTC      = $daysLeft
             OnPremisesLastSyncDateTimeUTC        = $user.OnPremisesLastSyncDateTime
-            OnPremisesSyncEnabled                = $user.OnPremisesSyncEnabled
             ForceChangePasswordNextSignIn        = $user.PasswordProfile.ForceChangePasswordNextSignIn
             ForceChangePasswordNextSignInWithMfa = $user.PasswordProfile.ForceChangePasswordNextSignInWithMfa
-            PasswordPolicies                     = $user.PasswordPolicies
+            OnPremisesSyncEnabled                = $user.OnPremisesSyncEnabled
             Domain                               = $userDomain
             PasswordValidityInheritedFrom        = $userDomainPolicy.PasswordValidityInheritedFrom
-            PasswordValidityPeriodInDays         = $userDomainPolicy.PasswordValidityPeriod
             PasswordNotificationWindowInDays     = $userDomainPolicy.PasswordNotificationWindowInDays
-            PasswordNextChangeDateTimeUTC        = if ($userDomainPolicy.PasswordValidityPeriod -ne '2147483647 (Password never expire)') { $user.LastPasswordChangeDateTime.AddDays($userDomainPolicy.PasswordValidityPeriod) }else {}
             PasswordExpired                      = $passwordExpired
         }
     
