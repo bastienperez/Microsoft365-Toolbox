@@ -48,7 +48,9 @@ function Get-MgUserPasswordInfo {
         [Parameter(Mandatory = $false)]
         [string[]]$UserPrincipalName,
         [Parameter(Mandatory = $false)]
-        [switch]$PasswordPoliciesByDomainOnly
+        [switch]$PasswordPoliciesByDomainOnly,
+        [Parameter(Mandatory = $false)]
+        [string]$ByDomain
     )
     
     # Import required modules
@@ -129,6 +131,12 @@ function Get-MgUserPasswordInfo {
 
             $usersList.Add($user)
         }
+    }
+    elseif($ByDomain) {
+        Write-Host -ForegroundColor Cyan "Retrieving password information for users in domain: $ByDomain (exluding guest users #EXT#@$ByDomain)"
+
+        $usersList = Get-MgUser -Filter "endswith(userPrincipalName,'$ByDomain') and not endswith(userPrincipalName,'#EXT#@$ByDomain')" -All -ConsistencyLevel eventual
+
     }
     else {
         Write-Host -ForegroundColor Cyan 'Retrieving password information for all users'
