@@ -1,0 +1,1 @@
+Script migrated to the project PS365 (https://github.com/BastienPerez/PS365): `Get-MgUserPasswordInfo`
