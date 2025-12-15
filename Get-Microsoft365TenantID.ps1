@@ -6,5 +6,5 @@ function Get-Microsoft365TenantID {
 		[string]$Domain
 	)
 
-	(Invoke-WebRequest https://login.windows.net/$Domain/.well-known/openid-configuration | ConvertFrom-Json).Token_Endpoint.Split('/')[3]
+	(Invoke-WebRequest https://login.windows.net/$Domain/.well-known/openid-configuration -UseBasicParsing | ConvertFrom-Json).Token_Endpoint.Split('/')[3]
 }
