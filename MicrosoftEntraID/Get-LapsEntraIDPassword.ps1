@@ -27,6 +27,22 @@ Retrieves the LAPS password for the specified device ID, including the password 
 PS> Get-LapsEntraIDPassword -DeviceID "12345678-1234-1234-1234-123456789012" -IncludePasswords -IncludeHistory -AsPlainText
 Retrieves the LAPS password for the specified device ID, including the password itself, includes the password history, and displays the password in plain text.
 
+.EXAMPLE
+$windowsDevices = Get-MgDevice -All | Where-Object { $_.OperatingSystem -eq "Windows" }
+$total = $windowsDevices.Count
+$counter = 0
+
+# filtre sur FR3228 et DIP-2410-16
+$lapsPwd = $windowsDevices | ForEach-Object { 
+    $counter++
+    Write-Host "Processing device $($_.DisplayName) with ID $($_.Id) ($($counter)/$($total))"
+    Get-LapsEntraIDPassword -DeviceID $_.DeviceId -IncludePasswords -AsPlainText
+}
+
+$lapsPwd = $windowsDevices | Where-Object { $_.DisplayName -match 'FR3228|DIP-2410-16' } | ForEach-Object { 
+
+Retrieves the LAPS passwords for all Windows devices in Microsoft Entra ID.
+
 .NOTES
 Requires appropriate permissions in Microsoft Entra ID to read LAPS passwords.
 This cmdlet is part of the Microsoft365-Toolbox module.
